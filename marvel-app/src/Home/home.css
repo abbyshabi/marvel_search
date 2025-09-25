@@ -72,6 +72,12 @@ img {
     }
 }
 
+.marvel-logo {
+    display: block;
+    margin: 0 auto 20px auto;
+    width: 120px;
+    height: 50px;
+}
 /* Loading Bar Styles */
 .loading-bar {
     width: 100%;
@@ -113,4 +119,29 @@ img {
     margin: 0 auto;
 }
 
+.search_bar {
+    margin-bottom: 100px;
+}
 
+.no-results-message-container {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    height: 50vh; /* Adjust as needed */
+    text-align: center;
+  }
+  
+  .no-results-message {
+    font-size: 1.5rem;
+    color: #d32f2f;
+    font-weight: bold;
+    margin: 0;
+  }
+  
+  .suggestion-message {
+    font-size: 1rem;
+    color: #555;
+    margin-top: 10px;
+  }
+  

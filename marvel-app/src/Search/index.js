@@ -1,34 +1,87 @@
-import React, { useState } from 'react';
-import { fetchCharacters } from '../api'; // Assuming fetchCharacters sends requests to your Go backend
+import React, { useState } from "react";
+import "./Search.css";
 
-function Search({ setCharacters }) {
-  const [searchQuery, setSearchQuery] = useState(""); // Track search query
+function Search({ searchQuery, setSearchQuery, triggerSearch, fetchSuggestions }) {
+  const [suggestions, setSuggestions] = useState([]);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
-  const handleSearch = async () => {
-    if (searchQuery.trim().length < 1) {
-      alert("Input cannot be blank");
-      return;
+  const handleSearchChange = async (e) => {
+    const query = e.target.value;
+    setSearchQuery(query);
+
+    if (query.trim() !== "") {
+      try {
+        const fetchedSuggestions = await fetchSuggestions(query); // Fetch suggestions
+        setSuggestions(fetchedSuggestions || []);
+        setIsDropdownOpen(fetchedSuggestions && fetchedSuggestions.length > 0);
+      } catch (error) {
+        console.error("Error fetching suggestions:", error);
+        setSuggestions([]);
+        setIsDropdownOpen(false);
+      }
+    } else {
+      // Clear suggestions if input is empty
+      setSuggestions([]);
+      setIsDropdownOpen(false);
     }
+  };
 
-    try {
-      // Fetch characters from Go backend with the search query
-      const result = await fetchCharacters(searchQuery);
-      setCharacters(result?.data?.data?.results || []); // Update the character list
-    } catch (error) {
-      console.error(error);
+  const handleSuggestionClick = (suggestion) => {
+    setSearchQuery(suggestion); // Update input value
+    setSuggestions([]); // Clear suggestions
+    setIsDropdownOpen(false); // Close dropdown
+    triggerSearch(suggestion); // Trigger main search
+  };
+
+  const handleSearchSubmit = (e) => {
+    e.preventDefault(); // Prevent default form submission
+    setSuggestions([]); // Clear suggestions
+    setIsDropdownOpen(false); // Close dropdown
+    triggerSearch(); // Trigger main search
+  };
+
+  const handleKeyPress = (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault(); // Prevent accidental form submission
+      setSuggestions([]); // Clear suggestions
+      setIsDropdownOpen(false); // Close dropdown
+      triggerSearch(); // Trigger main search
     }
   };
 
   return (
-    <div className="search-container">
-      <input
-        type="text"
-        value={searchQuery}
-        onChange={(e) => setSearchQuery(e.target.value)} // Update search query state
-        placeholder="Search Marvel characters..."
-      />
-      <button onClick={handleSearch}>Search</button>
-    </div>
+    <form className="search-form" onSubmit={handleSearchSubmit}>
+      <div className="search-container">
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={handleSearchChange} // Fetch suggestions
+          placeholder="Search for characters..."
+          className="search-input"
+          onKeyDown={handleKeyPress} // Handle Enter key for search
+        />
+        <button
+          type="submit"
+          className="search-button"
+          disabled={!searchQuery.trim()} // Disable button if input is empty
+        >
+          Search
+        </button>
+      </div>
+      {isDropdownOpen && suggestions.length > 0 && (
+        <ul className="suggestions-dropdown">
+          {suggestions.map((suggestion, index) => (
+            <li
+              key={index}
+              onClick={() => handleSuggestionClick(suggestion)}
+              className="suggestion-item"
+            >
+              {suggestion}
+            </li>
+          ))}
+        </ul>
+      )}
+    </form>
   );
 }
 

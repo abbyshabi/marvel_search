@@ -3,9 +3,11 @@ package main
 import (
 	"crypto/md5"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 
@@ -14,53 +16,59 @@ import (
 	"github.com/joho/godotenv"
 )
 
-// Generate the hash required for the Marvel API request
+type SuggestionResponse struct {
+	Suggestions []string `json:"suggestions"`
+}
+
+var baseAPIURL = "https://gateway.marvel.com/v1/public"
+
 func generateHash(ts, privateKey, publicKey string) string {
 	toHash := ts + privateKey + publicKey
 	hash := md5.Sum([]byte(toHash))
 	return hex.EncodeToString(hash[:])
 }
 
-// Create a reusable HTTP client
-var httpClient = &http.Client{
-	Timeout: 10 * time.Second, // Set timeout for API requests
+var httpClient = defaultHTTPClient()
+
+func defaultHTTPClient() *http.Client {
+	return &http.Client{Timeout: 10 * time.Second}
 }
 
-// Handler to fetch characters from the Marvel API
 func getCharacters(c *gin.Context) {
-
 	err := godotenv.Load()
 	if err != nil {
-		log.Fatal("Error loading .env file")
+		log.Println("Warning: .env file not found, relying on environment variables")
 	}
 
-	// Marvel API keys
 	publicKey := os.Getenv("publicKey")
 	privateKey := os.Getenv("privateKey")
-	fmt.Println(publicKey)
 	ts := fmt.Sprintf("%d", time.Now().Unix())
-
-	// Generate hash for authentication
 	hash := generateHash(ts, privateKey, publicKey)
 
-	// Extract pagination parameters from the query string
-	offset := c.DefaultQuery("offset", "0") // Default offset is 0
-	limit := c.DefaultQuery("limit", "20")  // Default limit is 20
+	offset := c.DefaultQuery("offset", "0")
+	limit := c.DefaultQuery("limit", "20")
+	name := c.DefaultQuery("name", "")
 
-	// Build the full Marvel API request URL
+	if name != "" {
+		name = url.QueryEscape(name) // Ensure spaces and special characters are encoded
+	}
+
 	url := fmt.Sprintf(
 		"https://gateway.marvel.com/v1/public/characters?ts=%s&apikey=%s&hash=%s&offset=%s&limit=%s",
 		ts, publicKey, hash, offset, limit,
 	)
 
-	// Create a new HTTP request
+	if name != "" {
+		url = fmt.Sprintf("%s&name=%s", url, name)
+	}
+	fmt.Println(url)
+
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create request"})
 		return
 	}
 
-	// Execute the request
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch characters"})
@@ -68,19 +76,71 @@ func getCharacters(c *gin.Context) {
 	}
 	defer resp.Body.Close()
 
-	// Stream the response back to the client
 	c.DataFromReader(http.StatusOK, resp.ContentLength, resp.Header.Get("Content-Type"), resp.Body, nil)
+}
+
+func getCharacterSuggestions(c *gin.Context) {
+	if err := godotenv.Load(); err != nil {
+		log.Println("Error loading .env")
+	}
+	log.Println("publicKey:", os.Getenv("publicKey"))
+	log.Println("privateKey:", os.Getenv("privateKey"))
+
+	publicKey := os.Getenv("publicKey")
+	privateKey := os.Getenv("privateKey")
+	ts := fmt.Sprintf("%d", time.Now().Unix())
+	hash := generateHash(ts, privateKey, publicKey)
+
+	nameStartsWith := c.Query("nameStartsWith")
+
+	url := fmt.Sprintf("%s/characters?ts=%s&apikey=%s&hash=%s&nameStartsWith=%s", baseAPIURL, ts, publicKey, hash, nameStartsWith)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create request"})
+		return
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch character suggestions"})
+		return
+	}
+	defer resp.Body.Close()
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse API response"})
+		return
+	}
+
+	// Extract suggestions from the API response
+	data := result["data"].(map[string]interface{})
+	results := data["results"].([]interface{})
+
+	suggestions := []string{}
+	for _, item := range results {
+		character := item.(map[string]interface{})
+		if name, ok := character["name"].(string); ok {
+			suggestions = append(suggestions, name)
+		}
+	}
+
+	c.JSON(http.StatusOK, SuggestionResponse{Suggestions: suggestions})
 }
 
 func main() {
 	r := gin.Default()
 
-	// Enable CORS to allow requests from the frontend
 	r.Use(cors.Default())
 
-	// Define routes
+	// Characters Endpoint
 	r.GET("/characters", getCharacters)
 
-	// Start the server
-	r.Run(":8080")
+	// Suggestions Endpoint
+	r.GET("/characters/suggestions", getCharacterSuggestions)
+
+	if err := r.Run(":8080"); err != nil {
+		log.Fatalf("Failed to start server: %v", err)
+	}
 }
